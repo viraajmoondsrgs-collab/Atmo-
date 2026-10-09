@@ -8,10 +8,10 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@android:drawable/sym_def_app_icon"
         android:label="Atmo"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material3.DayNight.NoActionBar">
+        android:theme="@android:style/Theme.Material.NoTitleBar">
         
         <activity
             android:name="com.trio.atmo.MainActivity"
