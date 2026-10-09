@@ -25,15 +25,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.common.api.ApiException
 import com.trio.atmo.data.EmailEntity
 
 enum class AuthMode { MICROG, NATIVE_GMS }
+
+// Registered Google Cloud Web Application Client ID
+private const val GOOGLE_WEB_CLIENT_ID = "627107001727-ec1ocbfu3jhkmrrj5q3iorgj8o6lnh89.apps.googleusercontent.com"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,26 +60,32 @@ class MainActivity : ComponentActivity() {
         launcher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>
     ) {
         val providerName = if (mode == AuthMode.MICROG) "microG Core Services" else "Native Google Play Services"
-        
-        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestEmail()
-            .requestProfile()
-            .build()
 
-        val client = GoogleSignIn.getClient(this, gso)
+        try {
+            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestIdToken(GOOGLE_WEB_CLIENT_ID)
+                .requestEmail()
+                .requestProfile()
+                .build()
 
-        if (mode == AuthMode.MICROG) {
-            Toast.makeText(this, "Connecting via $providerName...", Toast.LENGTH_SHORT).show()
-            launcher.launch(client.signInIntent)
-        } else {
-            val availability = GoogleApiAvailability.getInstance()
-            val result = availability.isGooglePlayServicesAvailable(this)
-            if (result == ConnectionResult.SUCCESS) {
+            val client = GoogleSignIn.getClient(this, gso)
+
+            if (mode == AuthMode.MICROG) {
                 Toast.makeText(this, "Connecting via $providerName...", Toast.LENGTH_SHORT).show()
                 launcher.launch(client.signInIntent)
             } else {
-                Toast.makeText(this, "Native GMS error code: $result", Toast.LENGTH_LONG).show()
+                val availability = GoogleApiAvailability.getInstance()
+                val result = availability.isGooglePlayServicesAvailable(this)
+                if (result == ConnectionResult.SUCCESS) {
+                    Toast.makeText(this, "Connecting via $providerName...", Toast.LENGTH_SHORT).show()
+                    launcher.launch(client.signInIntent)
+                } else {
+                    Toast.makeText(this, "Play Services status: $result. Fallback active.", Toast.LENGTH_LONG).show()
+                    launcher.launch(client.signInIntent)
+                }
             }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Auth initialization failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
         }
     }
 }
@@ -85,7 +94,7 @@ class MainActivity : ComponentActivity() {
 fun AtmoAdaptiveTheme(content: @Composable () -> Unit) {
     val darkTheme = isSystemInDarkTheme()
     val context = LocalContext.current
-    
+
     val colorScheme = when {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -120,6 +129,10 @@ fun AtmoMainScreen(
     var showSettingsSheet by remember { mutableStateOf(false) }
     var showComposeDialog by remember { mutableStateOf(false) }
     var selectedEmail by remember { mutableStateOf<EmailEntity?>(null) }
+    
+    // Connected user account state
+    var connectedAccountEmail by remember { mutableStateOf<String?>(null) }
+    var connectedAccountName by remember { mutableStateOf<String?>(null) }
 
     val emails by emailViewModel.emails.collectAsState()
     val searchQuery by emailViewModel.searchQuery.collectAsState()
@@ -129,12 +142,17 @@ fun AtmoMainScreen(
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            if (task.isSuccessful) {
-                val account = task.result
-                Toast.makeText(context, "Welcome, ${account?.displayName ?: "User"}!", Toast.LENGTH_LONG).show()
-            } else {
-                Toast.makeText(context, "Authentication failed", Toast.LENGTH_SHORT).show()
+            try {
+                val account = task.getResult(ApiException::class.java)
+                connectedAccountEmail = account?.email ?: "Connected Account"
+                connectedAccountName = account?.displayName ?: "User"
+                
+                Toast.makeText(context, "Successfully connected: $connectedAccountEmail", Toast.LENGTH_LONG).show()
+            } catch (e: ApiException) {
+                Toast.makeText(context, "OAuth Connection Error Code: ${e.statusCode}", Toast.LENGTH_LONG).show()
             }
+        } else {
+            Toast.makeText(context, "Sign-in cancelled or interrupted", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -147,6 +165,13 @@ fun AtmoMainScreen(
                         onValueChange = { emailViewModel.onSearchQueryChanged(it) },
                         placeholder = { Text("Search in mail (Local FTS)") },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { emailViewModel.onSearchQueryChanged("") }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear")
+                                }
+                            }
+                        },
                         singleLine = true,
                         shape = RoundedCornerShape(24.dp),
                         modifier = Modifier
@@ -160,7 +185,23 @@ fun AtmoMainScreen(
                 },
                 actions = {
                     IconButton(onClick = { showSettingsSheet = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        if (connectedAccountEmail != null) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = connectedAccountName?.take(1)?.uppercase() ?: "A",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                        } else {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        }
                     }
                 }
             )
@@ -198,7 +239,7 @@ fun AtmoMainScreen(
             }
         }
 
-        // Email Details Sheet
+        // Email Details Dialog
         selectedEmail?.let { email ->
             AlertDialog(
                 onDismissRequest = { selectedEmail = null },
@@ -233,7 +274,8 @@ fun AtmoMainScreen(
             ComposeEmailDialog(
                 onDismiss = { showComposeDialog = false },
                 onSend = { to, subject, body ->
-                    Toast.makeText(context, "Email queued locally for sending to $to", Toast.LENGTH_LONG).show()
+                    emailViewModel.sendEmail(to, subject, body)
+                    Toast.makeText(context, "Email sent and saved to local database", Toast.LENGTH_SHORT).show()
                     showComposeDialog = false
                 }
             )
@@ -250,11 +292,31 @@ fun AtmoMainScreen(
                         .padding(24.dp)
                 ) {
                     Text(
-                        text = "Authentication & Framework",
+                        text = "Account & Framework",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(16.dp))
+
+                    if (connectedAccountEmail != null) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(connectedAccountName ?: "User", fontWeight = FontWeight.Bold)
+                                    Text(connectedAccountEmail ?: "", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
 
                     Surface(
                         onClick = { authMode = AuthMode.MICROG },
@@ -299,7 +361,7 @@ fun AtmoMainScreen(
                         },
                         modifier = Modifier.fillMaxWidth().height(50.dp)
                     ) {
-                        Text("Connect Account")
+                        Text(if (connectedAccountEmail == null) "Connect Account" else "Switch / Re-connect Account")
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                 }
@@ -314,58 +376,63 @@ fun EmailItemRow(
     onClick: () -> Unit,
     onStarToggle: () -> Unit
 ) {
-    ListItem(
-        modifier = Modifier.padding(vertical = 4.dp),
-        headlineContent = {
-            Text(
-                text = email.sender,
-                fontWeight = if (email.isUnread) FontWeight.Bold else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        },
-        supportingContent = {
-            Column {
+    Surface(
+        onClick = onClick,
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        ListItem(
+            modifier = Modifier.padding(vertical = 4.dp),
+            headlineContent = {
                 Text(
-                    text = email.subject,
-                    fontWeight = if (email.isUnread) FontWeight.SemiBold else FontWeight.Normal,
+                    text = email.sender,
+                    fontWeight = if (email.isUnread) FontWeight.Bold else FontWeight.Normal,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = email.snippet,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        },
-        leadingContent = {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.size(40.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
+            },
+            supportingContent = {
+                Column {
                     Text(
-                        text = email.sender.take(1).uppercase(),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        text = email.subject,
+                        fontWeight = if (email.isUnread) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = email.snippet,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            },
+            leadingContent = {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = email.sender.take(1).uppercase(),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            },
+            trailingContent = {
+                IconButton(onClick = onStarToggle) {
+                    Icon(
+                        imageVector = if (email.isStarred) Icons.Default.Star else Icons.Default.StarBorder,
+                        contentDescription = "Star",
+                        tint = if (email.isStarred) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-        },
-        trailingContent = {
-            IconButton(onClick = onStarToggle) {
-                Icon(
-                    imageVector = if (email.isStarred) Icons.Default.Star else Icons.Default.StarBorder,
-                    contentDescription = "Star",
-                    tint = if (email.isStarred) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    )
+        )
+    }
 }
 
 @Composable
@@ -407,7 +474,10 @@ fun ComposeEmailDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onSend(to, subject, body) }) {
+            Button(
+                onClick = { onSend(to, subject, body) },
+                enabled = to.isNotBlank() && subject.isNotBlank()
+            ) {
                 Text("Send")
             }
         },
