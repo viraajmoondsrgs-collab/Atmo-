@@ -1,10 +1,13 @@
 package com.trio.atmo
 
+import android.app.Activity
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,14 +46,17 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     ExpressiveDashboardScreen(
-                        onAuthenticate = { selectedMode -> performAuth(selectedMode) }
+                        onAuthenticate = { mode, launcher -> triggerAuth(mode, launcher) }
                     )
                 }
             }
         }
     }
 
-    private fun performAuth(mode: AuthMode) {
+    private fun triggerAuth(
+        mode: AuthMode,
+        launcher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>
+    ) {
         val providerName = if (mode == AuthMode.MICROG) "microG Core Services" else "Native Google Play Services"
         
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
@@ -59,14 +65,16 @@ class MainActivity : ComponentActivity() {
             .build()
 
         val client = GoogleSignIn.getClient(this, gso)
-        
+
         if (mode == AuthMode.MICROG) {
-            Toast.makeText(this, "Connecting to $providerName...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Connecting via $providerName...", Toast.LENGTH_SHORT).show()
+            launcher.launch(client.signInIntent)
         } else {
             val availability = GoogleApiAvailability.getInstance()
             val result = availability.isGooglePlayServicesAvailable(this)
             if (result == ConnectionResult.SUCCESS) {
-                Toast.makeText(this, "Connecting to $providerName...", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Connecting via $providerName...", Toast.LENGTH_SHORT).show()
+                launcher.launch(client.signInIntent)
             } else {
                 Toast.makeText(this, "Native GMS error code: $result", Toast.LENGTH_LONG).show()
             }
@@ -105,9 +113,27 @@ fun AtmoAdaptiveTheme(content: @Composable () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExpressiveDashboardScreen(onAuthenticate: (AuthMode) -> Unit) {
+fun ExpressiveDashboardScreen(
+    onAuthenticate: (AuthMode, androidx.activity.result.ActivityResultLauncher<android.content.Intent>) -> Unit
+) {
+    val context = LocalContext.current
     var authMode by remember { mutableStateOf(AuthMode.MICROG) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+
+    // Launcher that handles sign-in activity result
+    val signInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            if (task.isSuccessful) {
+                val account = task.result
+                Toast.makeText(context, "Welcome, ${account?.displayName ?: "User"}!", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(context, "Authentication failed", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -220,7 +246,7 @@ fun ExpressiveDashboardScreen(onAuthenticate: (AuthMode) -> Unit) {
             }
 
             Button(
-                onClick = { onAuthenticate(authMode) },
+                onClick = { onAuthenticate(authMode, signInLauncher) },
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier
                     .fillMaxWidth()
