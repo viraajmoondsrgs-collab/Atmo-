@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -76,10 +77,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AtmoAdaptiveTheme(content: @Composable () -> Unit) {
     val darkTheme = isSystemInDarkTheme()
+    val context = LocalContext.current
+    
     val colorScheme = when {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            if (darkTheme) dynamicDarkColorScheme(androidx.compose.ui.platform.LocalContext.current)
-            else dynamicLightColorScheme(androidx.compose.ui.platform.LocalContext.current)
+            if (darkTheme) dynamicDarkColorScheme(context)
+            else dynamicLightColorScheme(context)
         }
         darkTheme -> darkColorScheme(
             primary = Color(0xFFD0BCFF),
