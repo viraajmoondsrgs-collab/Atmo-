@@ -11,7 +11,7 @@
         android:icon="@android:drawable/sym_def_app_icon"
         android:label="Atmo"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.NoTitleBar">
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
         
         <activity
             android:name="com.trio.atmo.MainActivity"
