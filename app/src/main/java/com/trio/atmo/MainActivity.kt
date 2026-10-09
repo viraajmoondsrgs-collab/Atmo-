@@ -192,7 +192,8 @@ fun AtmoMainScreen(
                 Toast.makeText(context, "OAuth Connection Error Code: ${e.statusCode}", Toast.LENGTH_LONG).show()
             }
         } else {
-            Toast.makeText(context, "Sign-in cancelled or interrupted", Toast.LENGTH_SHORT).show()
+         val resultCode = result.resultCode
+         Toast.makeText(context, "Sign-in returned non-OK code: $resultCode", Toast.LENGTH_LONG).show()
         }
     }
 
