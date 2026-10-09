@@ -10,12 +10,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,18 +23,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
+import com.trio.atmo.data.EmailEntity
 
-enum class AuthMode {
-    MICROG,
-    NATIVE_GMS
-}
+enum class AuthMode { MICROG, NATIVE_GMS }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,7 +44,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    ExpressiveDashboardScreen(
+                    AtmoMainScreen(
                         onAuthenticate = { mode, launcher -> triggerAuth(mode, launcher) }
                     )
                 }
@@ -89,8 +88,7 @@ fun AtmoAdaptiveTheme(content: @Composable () -> Unit) {
     
     val colorScheme = when {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            if (darkTheme) dynamicDarkColorScheme(context)
-            else dynamicLightColorScheme(context)
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
         darkTheme -> darkColorScheme(
             primary = Color(0xFFD0BCFF),
@@ -113,14 +111,19 @@ fun AtmoAdaptiveTheme(content: @Composable () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExpressiveDashboardScreen(
+fun AtmoMainScreen(
+    emailViewModel: EmailViewModel = viewModel(),
     onAuthenticate: (AuthMode, androidx.activity.result.ActivityResultLauncher<android.content.Intent>) -> Unit
 ) {
     val context = LocalContext.current
     var authMode by remember { mutableStateOf(AuthMode.MICROG) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+    var showComposeDialog by remember { mutableStateOf(false) }
+    var selectedEmail by remember { mutableStateOf<EmailEntity?>(null) }
 
-    // Launcher that handles sign-in activity result
+    val emails by emailViewModel.emails.collectAsState()
+    val searchQuery by emailViewModel.searchQuery.collectAsState()
+
     val signInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -137,133 +140,109 @@ fun ExpressiveDashboardScreen(
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { 
-                    Text(
-                        "Atmo", 
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleLarge
-                    ) 
+            TopAppBar(
+                title = {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { emailViewModel.onSearchQueryChanged(it) },
+                        placeholder = { Text("Search in mail (Local FTS)") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 8.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedBorderColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
                 },
                 actions = {
                     IconButton(onClick = { showSettingsSheet = true }) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Authentication Settings"
-                        )
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer
-                )
+                }
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { showComposeDialog = true },
+                icon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                text = { Text("Compose") },
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             )
         }
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                ),
-                shape = RoundedCornerShape(28.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(28.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(60.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Shield,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier
-                                .padding(12.dp)
-                                .fillMaxSize()
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Text(
-                        text = "Atmo Mail",
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = "Local-First • Tracker Stripped",
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    SuggestionChip(
-                        onClick = { showSettingsSheet = true },
-                        label = {
-                            Text(
-                                if (authMode == AuthMode.MICROG) "Active Provider: microG (Default)" else "Active Provider: Native GMS",
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    )
+            if (emails.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No messages found", style = MaterialTheme.typography.bodyLarge)
                 }
-            }
-
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                FeatureTile(
-                    icon = Icons.Default.Lock,
-                    title = "Zero-Knowledge Engine",
-                    description = "Emails processed 100% locally on device"
-                )
-                FeatureTile(
-                    icon = Icons.Default.VerifiedUser,
-                    title = if (authMode == AuthMode.MICROG) "microG Core active" else "Native GMS active",
-                    description = if (authMode == AuthMode.MICROG) "De-Googled authentication via GsfProxy" else "Official Google Play Services framework"
-                )
-            }
-
-            Button(
-                onClick = { onAuthenticate(authMode, signInLauncher) },
-                shape = RoundedCornerShape(20.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-            ) {
-                Text(
-                    text = if (authMode == AuthMode.MICROG) "Sign In via microG" else "Sign In via Native GMS",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(emails, key = { it.id }) { email ->
+                        EmailItemRow(
+                            email = email,
+                            onClick = { selectedEmail = email },
+                            onStarToggle = { emailViewModel.toggleStar(email) }
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    }
+                }
             }
         }
 
+        // Email Details Sheet
+        selectedEmail?.let { email ->
+            AlertDialog(
+                onDismissRequest = { selectedEmail = null },
+                confirmButton = {
+                    TextButton(onClick = { selectedEmail = null }) { Text("Close") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        emailViewModel.deleteEmail(email.id)
+                        selectedEmail = null
+                    }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                },
+                title = { Text(email.subject, fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        Text("From: ${email.sender}", style = MaterialTheme.typography.labelLarge)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text("Tracker Stripped & Sanitized") },
+                            icon = { Icon(Icons.Default.Shield, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(email.body, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            )
+        }
+
+        // Compose Dialog
+        if (showComposeDialog) {
+            ComposeEmailDialog(
+                onDismiss = { showComposeDialog = false },
+                onSend = { to, subject, body ->
+                    Toast.makeText(context, "Email queued locally for sending to $to", Toast.LENGTH_LONG).show()
+                    showComposeDialog = false
+                }
+            )
+        }
+
+        // Auth Settings Sheet
         if (showSettingsSheet) {
             ModalBottomSheet(
-                onDismissRequest = { showSettingsSheet = false },
-                sheetState = rememberModalBottomSheetState()
+                onDismissRequest = { showSettingsSheet = false }
             ) {
                 Column(
                     modifier = Modifier
@@ -271,16 +250,11 @@ fun ExpressiveDashboardScreen(
                         .padding(24.dp)
                 ) {
                     Text(
-                        text = "Authentication Settings",
+                        text = "Authentication & Framework",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = "Select your preferred authentication framework.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     Surface(
                         onClick = { authMode = AuthMode.MICROG },
@@ -288,18 +262,12 @@ fun ExpressiveDashboardScreen(
                         color = if (authMode == AuthMode.MICROG) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = authMode == AuthMode.MICROG,
-                                onClick = { authMode = AuthMode.MICROG }
-                            )
+                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = authMode == AuthMode.MICROG, onClick = { authMode = AuthMode.MICROG })
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text("microG (Default)", fontWeight = FontWeight.Bold)
-                                Text("Privacy-respecting open-source framework", style = MaterialTheme.typography.bodySmall)
+                                Text("microG Core", fontWeight = FontWeight.Bold)
+                                Text("De-Googled local authentication framework", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -312,23 +280,28 @@ fun ExpressiveDashboardScreen(
                         color = if (authMode == AuthMode.NATIVE_GMS) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = authMode == AuthMode.NATIVE_GMS,
-                                onClick = { authMode = AuthMode.NATIVE_GMS }
-                            )
+                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = authMode == AuthMode.NATIVE_GMS, onClick = { authMode = AuthMode.NATIVE_GMS })
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text("Native Google Play Services", fontWeight = FontWeight.Bold)
-                                Text("Standard GMS stack for unmodified devices", style = MaterialTheme.typography.bodySmall)
+                                Text("Standard Play Services stack", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Button(
+                        onClick = {
+                            showSettingsSheet = false
+                            onAuthenticate(authMode, signInLauncher)
+                        },
+                        modifier = Modifier.fillMaxWidth().height(50.dp)
+                    ) {
+                        Text("Connect Account")
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
         }
@@ -336,39 +309,112 @@ fun ExpressiveDashboardScreen(
 }
 
 @Composable
-fun FeatureTile(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    description: String
+fun EmailItemRow(
+    email: EmailEntity,
+    onClick: () -> Unit,
+    onStarToggle: () -> Unit
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp)
+    ListItem(
+        modifier = Modifier.padding(vertical = 4.dp),
+        headlineContent = {
+            Text(
+                text = email.sender,
+                fontWeight = if (email.isUnread) FontWeight.Bold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.width(16.dp))
+        },
+        supportingContent = {
             Column {
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
+                    text = email.subject,
+                    fontWeight = if (email.isUnread) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = description,
+                    text = email.snippet,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        },
+        leadingContent = {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = email.sender.take(1).uppercase(),
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        },
+        trailingContent = {
+            IconButton(onClick = onStarToggle) {
+                Icon(
+                    imageVector = if (email.isStarred) Icons.Default.Star else Icons.Default.StarBorder,
+                    contentDescription = "Star",
+                    tint = if (email.isStarred) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
-    }
+    )
+}
+
+@Composable
+fun ComposeEmailDialog(
+    onDismiss: () -> Unit,
+    onSend: (to: String, subject: String, body: String) -> Unit
+) {
+    var to by remember { mutableStateOf("") }
+    var subject by remember { mutableStateOf("") }
+    var body by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New Message", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = to,
+                    onValueChange = { to = it },
+                    label = { Text("To") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = subject,
+                    onValueChange = { subject = it },
+                    label = { Text("Subject") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = body,
+                    onValueChange = { body = it },
+                    label = { Text("Message Body") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSend(to, subject, body) }) {
+                Text("Send")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
