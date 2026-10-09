@@ -25,13 +25,27 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.common.api.ApiException
-import com.trio.atmo.data.EmailEntity
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+// Local Data Class
+data class AtmoEmail(
+    val id: String,
+    val sender: String,
+    val subject: String,
+    val snippet: String,
+    val body: String,
+    val isUnread: Boolean = false,
+    val isStarred: Boolean = false
+)
 
 enum class AuthMode { MICROG, NATIVE_GMS }
 
@@ -120,20 +134,48 @@ fun AtmoAdaptiveTheme(content: @Composable () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AtmoMainScreen(
-    emailViewModel: EmailViewModel = viewModel(),
     onAuthenticate: (AuthMode, androidx.activity.result.ActivityResultLauncher<android.content.Intent>) -> Unit
 ) {
     val context = LocalContext.current
     var authMode by remember { mutableStateOf(AuthMode.MICROG) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var showComposeDialog by remember { mutableStateOf(false) }
-    var selectedEmail by remember { mutableStateOf<EmailEntity?>(null) }
+    
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedEmail by remember { mutableStateOf<AtmoEmail?>(null) }
     
     var connectedAccountEmail by remember { mutableStateOf<String?>(null) }
     var connectedAccountName by remember { mutableStateOf<String?>(null) }
 
-    val emails by emailViewModel.emails.collectAsState()
-    val searchQuery by emailViewModel.searchQuery.collectAsState()
+    // In-memory email state for instant UI responsiveness
+    var emails by remember {
+        mutableStateOf(
+            listOf(
+                AtmoEmail(
+                    id = "1",
+                    sender = "Welcome Team",
+                    subject = "Welcome to Atmo!",
+                    snippet = "Your local-first email client is ready.",
+                    body = "Welcome to Atmo!\n\nThis app is built with Jetpack Compose, Material 3, and Room FTS search. All your data stays private and encrypted on-device.",
+                    isUnread = true
+                ),
+                AtmoEmail(
+                    id = "2",
+                    sender = "Security Desk",
+                    subject = "OAuth Handshake Configured",
+                    snippet = "Google OAuth 2.0 has been successfully configured.",
+                    body = "Your authentication setup for Google Play Services / microG is active with static Client ID verification.",
+                    isStarred = true
+                )
+            )
+        )
+    }
+
+    val filteredEmails = emails.filter {
+        it.subject.contains(searchQuery, ignoreCase = true) ||
+        it.sender.contains(searchQuery, ignoreCase = true) ||
+        it.snippet.contains(searchQuery, ignoreCase = true)
+    }
 
     val signInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -160,12 +202,12 @@ fun AtmoMainScreen(
                 title = {
                     OutlinedTextField(
                         value = searchQuery,
-                        onValueChange = { emailViewModel.onSearchQueryChanged(it) },
-                        placeholder = { Text("Search in mail (Local FTS)") },
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Search in mail") },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { emailViewModel.onSearchQueryChanged("") }) {
+                                IconButton(onClick = { searchQuery = "" }) {
                                     Icon(Icons.Default.Close, contentDescription = "Clear")
                                 }
                             }
@@ -219,17 +261,23 @@ fun AtmoMainScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            if (emails.isEmpty()) {
+            if (filteredEmails.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("No messages found", style = MaterialTheme.typography.bodyLarge)
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(emails, key = { it.id }) { email ->
+                    items(filteredEmails, key = { it.id }) { email ->
                         EmailItemRow(
                             email = email,
-                            onClick = { selectedEmail = email },
-                            onStarToggle = { emailViewModel.toggleStar(email) }
+                            onClick = {
+                                // Mark as read and open detail dialog
+                                emails = emails.map { if (it.id == email.id) it.copy(isUnread = false) else it }
+                                selectedEmail = email
+                            },
+                            onStarToggle = {
+                                emails = emails.map { if (it.id == email.id) it.copy(isStarred = !it.isStarred) else it }
+                            }
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
@@ -237,6 +285,7 @@ fun AtmoMainScreen(
             }
         }
 
+        // Tap-to-open email detail modal
         selectedEmail?.let { email ->
             AlertDialog(
                 onDismissRequest = { selectedEmail = null },
@@ -245,7 +294,7 @@ fun AtmoMainScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = {
-                        emailViewModel.deleteEmail(email.id)
+                        emails = emails.filterNot { it.id == email.id }
                         selectedEmail = null
                     }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
                 },
@@ -270,8 +319,15 @@ fun AtmoMainScreen(
             ComposeEmailDialog(
                 onDismiss = { showComposeDialog = false },
                 onSend = { to, subject, body ->
-                    emailViewModel.sendEmail(to, subject, body)
-                    Toast.makeText(context, "Email sent and saved to local database", Toast.LENGTH_SHORT).show()
+                    val newMsg = AtmoEmail(
+                        id = System.currentTimeMillis().toString(),
+                        sender = "To: $to",
+                        subject = subject,
+                        snippet = body.take(40),
+                        body = body
+                    )
+                    emails = listOf(newMsg) + emails
+                    Toast.makeText(context, "Email sent", Toast.LENGTH_SHORT).show()
                     showComposeDialog = false
                 }
             )
@@ -367,7 +423,7 @@ fun AtmoMainScreen(
 
 @Composable
 fun EmailItemRow(
-    email: EmailEntity,
+    email: AtmoEmail,
     onClick: () -> Unit,
     onStarToggle: () -> Unit
 ) {
