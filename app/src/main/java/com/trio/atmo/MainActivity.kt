@@ -35,7 +35,6 @@ import com.trio.atmo.data.EmailEntity
 
 enum class AuthMode { MICROG, NATIVE_GMS }
 
-// Registered Google Cloud Web Application Client ID
 private const val GOOGLE_WEB_CLIENT_ID = "627107001727-ec1ocbfu3jhkmrrj5q3iorgj8o6lnh89.apps.googleusercontent.com"
 
 class MainActivity : ComponentActivity() {
@@ -130,7 +129,6 @@ fun AtmoMainScreen(
     var showComposeDialog by remember { mutableStateOf(false) }
     var selectedEmail by remember { mutableStateOf<EmailEntity?>(null) }
     
-    // Connected user account state
     var connectedAccountEmail by remember { mutableStateOf<String?>(null) }
     var connectedAccountName by remember { mutableStateOf<String?>(null) }
 
@@ -239,7 +237,6 @@ fun AtmoMainScreen(
             }
         }
 
-        // Email Details Dialog
         selectedEmail?.let { email ->
             AlertDialog(
                 onDismissRequest = { selectedEmail = null },
@@ -269,7 +266,6 @@ fun AtmoMainScreen(
             )
         }
 
-        // Compose Dialog
         if (showComposeDialog) {
             ComposeEmailDialog(
                 onDismiss = { showComposeDialog = false },
@@ -281,7 +277,6 @@ fun AtmoMainScreen(
             )
         }
 
-        // Auth Settings Sheet
         if (showSettingsSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showSettingsSheet = false }
