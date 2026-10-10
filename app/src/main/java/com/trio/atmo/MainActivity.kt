@@ -404,7 +404,9 @@ suspend fun fetchAllMailSections(
             val token = try {
                 GoogleAuthUtil.getToken(context, account, scope)
             } catch (e: UserRecoverableAuthException) {
-                withContext(Dispatchers.Main) { onAuthRequired(e.intent) }
+                e.intent?.let { intent ->
+                    withContext(Dispatchers.Main) { onAuthRequired(intent) }
+                }
                 return@withContext result
             }
 
