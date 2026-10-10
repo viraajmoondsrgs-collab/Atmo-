@@ -11,7 +11,7 @@
         android:label="Atmo"
         android:roundIcon="@drawable/ic_atmo_launcher"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Material3.DayNight.NoActionBar">
+        android:theme="@android:style/Theme.Material.NoActionBar">
         
         <activity
             android:name=".MainActivity"
